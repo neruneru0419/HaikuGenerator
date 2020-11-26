@@ -2,10 +2,8 @@ require "twitter"
 require "natto"
 require "net/http"
 
-#todo
-#文章の漢字をmecabで変換
-#gooのapiでひらがなに変換
-#ブロックを作って読み仮名の長さを取得
+
+#{文節, 文節の長さ, 品詞}
 class NattoParser
   def initialize()
     @nm = Natto::MeCab.new()
@@ -23,32 +21,31 @@ class NattoParser
   end
 
   def parse(timeline_tweet)
-    @analyzed_tweets = Array.new
+    clause_list = Array.new
     kana_tweet = String.new
-
+    cnt = 0
     @nm.parse(timeline_tweet) do |n|
-      if n.surface.match?(/[一-龠々]/) then #漢字の検知
-        kana_tweet += n.feature.gsub(/.*,/, "") #漢字の読みを抽出
-      else
-        kana_tweet += n.surface
-      end
+        if n.surface != "" then
+            clause_list.push({"clause": n.surface}) #文節を格納
+            if n.surface.match?(/[一-龠々]/) then #漢字の検知
+                kana_tweet = n.feature.gsub(/.*,/, "") #漢字の読みを抽出
+            else
+                kana_tweet = n.surface
+            end
+            hiragana_tweet = get_hiragana_sentence(kana_tweet)
+            clause_list[cnt][:clause_length] = get_number_of_notes(hiragana_tweet["converted"]) #文節の長さを格納
+            clause_list[cnt][:part_of_speech] = n.feature.match(/.{1,2}詞/)[0]
+            cnt += 1
+        end
     end
-
-    hiragana_tweet = get_hiragana_sentence(kana_tweet)
-    @nm.parse(hiragana_tweet["converted"]) do |n|
-      @analyzed_tweets.push({"kana": n.surface, "phrase": n.surface})
-    end
-    return @analyzed_tweets[0..-2] #EOSのブロックを除去
+    p clause_list
+    return clause_list[0..-2] #EOSのブロックを除去
   end
 end
-def number_of_notes(block)
-  kana_lengths = []
+def get_number_of_notes(sentence)
   abandoned_kana = ["ァ", "ィ", "ゥ", "ェ", "ォ", "ャ", "ュ", "ョ"] #捨て仮名を格納
-  block.each do |phrase|
-    abandoned_kana.each{ |kana| phrase[:phrase].delete!(kana)}
-    kana_lengths.push(phrase[:phrase].length)
-  end
-  return kana_lengths
+  abandoned_kana.each{ |kana| sentence.delete!(kana)}
+  return sentence.length
 end
 def chain_notes(length_list)
   sum = 0
@@ -60,13 +57,10 @@ def chain_notes(length_list)
       sum = 0
     end
   end
-  puts five_sentence
 end
 natto_parser = NattoParser.new()
-kana_block = natto_parser.parse("")
-kana_length = number_of_notes(kana_block)
-puts kana_block
-puts chain_notes(kana_length)
+kana_block = natto_parser.parse("仕事終わってギター弾いてたらこんな時間")
+#kana_length = number_of_notes(kana_block)
 =begin
 client = Twitter::REST::Client.new do |config|
   config.consumer_key    = ENV
